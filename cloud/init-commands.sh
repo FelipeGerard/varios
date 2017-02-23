@@ -12,13 +12,27 @@ sudo update-alternatives --config editor
 
 #install system deps
 sudo apt update
-sudo apt install -y libcurl4-openssl-dev libxml2-dev gdebi-core zsh git-core awscli
-wget https://github.com/robbyrussell/oh-my-zsh/raw/master/tools/install.sh -O - | zsh
+sudo apt install -y libcurl4-openssl-dev libxml2-dev gdebi-core zsh git-core awscli parallel libudunits2-dev
+
 sudo chsh -s `which zsh` ubuntu
+sudo chsh -s `which zsh` rstudio
+sudo passwd rstudio
+# passwd = rs num
+# once for each user:
+wget https://github.com/robbyrussell/oh-my-zsh/raw/master/tools/install.sh -O - | zsh
+
+# change user with
+su - rstudio
+
+export R_LIBS_USER="/home/rstudio/R/library"
+echo 'export R_LIBS_USER="/home/rstudio/R/library"' >> .zshrc
+mkdir -p $R_LIBS_USER
 
 R -e "install.packages(c('caret'), repos='http://cran.rstudio.com/', dependencies = c('Depends','Imports'))"
 R -e "install.packages(c('tidyverse','glmnet','randomForest','xgboost','rvest','stringr','viridis','leaflet'), repos='http://cran.itam.mx/', dependencies = TRUE)"
 
+# try installing in parallel
+#echo 'tidyverse,glmnet,randomForest,xgboost,rvest,stringr,viridis,leaflet,rgl,rgdal' | tr ',' '\n' | parallel -j4 'R -e "install.packages(\"{}\", repos = \"http://cran.itam.mx/\", dependencies = TRUE)"'
 
 
 #############################
