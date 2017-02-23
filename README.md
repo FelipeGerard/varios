@@ -1,3 +1,3 @@
-# varios
+# Tests
 
-This is my first repository!
+Test various algorithms
