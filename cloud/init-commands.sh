@@ -24,9 +24,9 @@ wget https://github.com/robbyrussell/oh-my-zsh/raw/master/tools/install.sh -O - 
 # change user with
 su - rstudio
 
-export R_LIBS_USER="/home/rstudio/R/library"
-echo 'export R_LIBS_USER="/home/rstudio/R/library"' >> .zshrc
-mkdir -p $R_LIBS_USER
+#export R_LIBS_USER="/home/rstudio/R/library"
+#echo 'export R_LIBS_USER="/home/rstudio/R/library"' >> .zshrc
+#mkdir -p $R_LIBS_USER
 
 R -e "install.packages(c('caret'), repos='http://cran.rstudio.com/', dependencies = c('Depends','Imports'))"
 R -e "install.packages(c('tidyverse','glmnet','randomForest','xgboost','rvest','stringr','viridis','leaflet'), repos='http://cran.itam.mx/', dependencies = TRUE)"
