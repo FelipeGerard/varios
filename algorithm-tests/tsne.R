@@ -1,10 +1,10 @@
 
 
 library(tidyverse)
-library(rgl)
+# library(rgl)
 # library(Rsolnp)
 
-n <- 500
+n <- 60
 noise_sd <- 1
 d <- tibble(
   x = rep(1:4, each = n/4) + rnorm(n, 0, noise_sd),
@@ -167,18 +167,20 @@ set.seed(1234)
 theta <- rnorm(ld_ndim * nrow(d))
 cf <- cost_fun_gen(d, ld_ndim = ld_ndim, sigma = sigma)
 cfg <- cf_grad_gen(d, ld_ndim = ld_ndim)
-cf(theta)
-cfg(theta)
-grad(cf)(theta)
-cfg(theta) - grad(cf)(theta)
+# cf(theta)
+# cfg(theta)
+# grad(cf)(theta)
+# cfg(theta) - grad(cf)(theta)
 # opt <- optim(theta, cf, method = 'BFGS', control = list(trace = 1, maxit = 10, REPORT = 1))
 # opt <- optim(theta, cf, grad(cf), method = 'BFGS', control = list(trace = 1, maxit = 100, REPORT = 1))
-opt <- optim(theta, cf, cfg, method = 'BFGS', control = list(trace = 1, maxit = 300, REPORT = 1))
+system.time(
+  opt <- optim(theta, cf, cfg, method = 'BFGS', control = list(trace = 1, maxit = 300, REPORT = 1))
+)
 # opt <- gd(theta, cf, step = 1, maxit = 20, verbose = T)
 
 # opt <- solnp(theta, cf, control = list(trace = 5))
 
-plot3d(d[,1], d[,2], d[,3], col=categ)
+# plot3d(d[,1], d[,2], d[,3], col=categ)
 
 matrix(opt$par, nrow = nrow(d), ncol = ld_ndim) %>%
   as_tibble %>%
@@ -192,7 +194,10 @@ matrix(opt$par, nrow = nrow(d), ncol = ld_ndim) %>%
 # Now a real package
 
 library(tsne)
-opt <- tsne(d, k = ld_ndim)
+
+system.time(
+  opt <- tsne(d, k = ld_ndim)
+)
 
 opt %>%
   as_tibble %>%
