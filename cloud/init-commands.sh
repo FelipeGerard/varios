@@ -12,7 +12,8 @@ sudo update-alternatives --config editor
 
 #install system deps
 sudo apt update
-sudo apt install -y libcurl4-openssl-dev libxml2-dev gdebi-core zsh git-core awscli parallel libudunits2-dev
+sudo apt install -y libcurl4-openssl-dev libxml2-dev gdebi-core zsh git-core awscli parallel libudunits2-dev python-pip
+sudo pip install --upgrade pip
 
 sudo chsh -s `which zsh` ubuntu
 sudo chsh -s `which zsh` rstudio
@@ -29,11 +30,21 @@ su - rstudio
 #mkdir -p $R_LIBS_USER
 
 R -e "install.packages(c('caret'), repos='http://cran.rstudio.com/', dependencies = c('Depends','Imports'))"
-R -e "install.packages(c('tidyverse','glmnet','randomForest','xgboost','rvest','stringr','viridis','leaflet'), repos='http://cran.itam.mx/', dependencies = TRUE)"
+R -e "install.packages(c('tidyverse','glmnet','randomForest','xgboost','rvest','stringr','viridis','leaflet','sparklyr'), repos='http://cran.itam.mx/', dependencies = TRUE)"
 
 # try installing in parallel
 #echo 'tidyverse,glmnet,randomForest,xgboost,rvest,stringr,viridis,leaflet,rgl,rgdal' | tr ',' '\n' | parallel -j4 'R -e "install.packages(\"{}\", repos = \"http://cran.itam.mx/\", dependencies = TRUE)"'
 
+## Install spark
+## https://www.linkedin.com/pulse/getting-started-apache-spark-ubuntu-1404-myles-harrison
+## NOTE: make changes in .zshrc for each user, not in .bashrc
+## export SPARK_HOME="/opt/spark-2.1.0"
+## To get spark to work with sparklyr: use sparklyr::spark_install() !!
+
+## Install extra python packages: https://www.dabapps.com/blog/introduction-to-pip-and-virtualenv-python/
+virtualenv python-env
+python-env/bin/pip install pandas sklearn scipy ipython xlrd
+source python-env/bin/activate
 
 #############################
 ## wrong and already in the good image
