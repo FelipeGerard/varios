@@ -18,6 +18,7 @@ tsk <- makeClassifTask('iris',
 
 tune_cv <- makeResampleDesc('CV', iters = 5L)
 
+getLearnerParamSet(lrn)
 tune_grid <- makeParamSet(
   makeIntegerParam('minsplit', lower = 1, upper = tsk$task.desc$size),
   makeIntegerParam('maxdepth', lower = 1, upper = 10),
