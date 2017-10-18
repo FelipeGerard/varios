@@ -3,3 +3,5 @@
 *.ppk
 *.swp
 aws
+
+.Rhistory
