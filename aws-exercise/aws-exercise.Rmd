@@ -1,0 +1,389 @@
+---
+title: "AWS Test - Vehicle Failure Prediction"
+author: "Felipe Gerard"
+date: "October 2017"
+output:
+  html_notebook: 
+    toc: yes
+---
+
+## Summary
+
+The objective of the current document is to device a fleet preventive maintenance strategy. To do this, we need to predict vehicle failures given a set of telemetries.
+
+We will use an internal company database of previous failures and Machine Learning model to do this. A high-level overview of the process is as follows:
+
+1. Download and prepare the dataset
+2. Explore the dataset to identify data quality issues and initial insights
+3. Perform Machine Learning on the dataset to predict failure
+    a. Decide which type of learner to use
+    b. Tune the model's hyperparameters using a subset of the data called training set (months 1-7)
+    c. Estimate the performance of the model by training a model on the training set and predicting on the test set (months 8-11)
+    d. Train the final, production-ready model using the full dataset
+
+## Setup and data preparation
+
+### Libraries
+
+Load required libraries. I am a big advocate for Hadely Wickham's team `tidyverse`. I also like `mlr` for Machine Learning. I find it is clearer than `caret`.
+
+```{r message=FALSE, warning=FALSE, include=TRUE}
+library(tidyverse)
+library(ggplot2)
+library(lubridate)
+library(mlr)
+library(viridis)
+
+```
+
+### Download and save / read data
+
+Download data from the Internet and save it locally. If it already exists, then just read it from local disk.
+
+```{r}
+
+data_url <- 'http://aws-proserve-data-science.s3.amazonaws.com/device_failure.csv'
+file_name <- 'device_failure.csv'
+
+if (!file.exists(file_name)){
+  df <- read_csv(data_url, col_types = cols(failure = col_factor(levels = 0:1)))
+  write_csv(df, file_name)
+} else {
+  df <- read_csv(file_name, col_types = cols(failure = col_factor(levels = 0:1)))
+}
+
+head(df, 20)
+
+```
+
+## Exploratory analysis
+
+Before doing any modelling, we need to ascertain the dataset's quality. To achieve this we will make a few simple plots and tests. In a real environment we would need to put the data through *ad hoc* quality tests, but for the purpose of this exercise the following will suffice.
+
+### Missing values
+
+There are no missing values, which is great.
+
+```{r}
+sum(is.na(df))
+```
+
+### ID variables and response
+
+For some reason there seem to be many more cases in the first months than in the last ones. We will take this into account when we split the data into train / validation / test.
+
+```{r}
+
+## Plot cases per month
+df %>% 
+  ggplot(aes(month(date))) +
+  geom_bar() +
+  geom_text(stat = 'count', aes(label = scales::comma(..count..)), vjust = -.5) +
+  scale_x_continuous(breaks = 1:12) +
+  scale_y_continuous(labels = scales::comma) +
+  coord_cartesian(ylim = c(0, 27000)) +
+  theme_bw() +
+  labs(
+    title = 'Monthly cases recorded in internal database',
+    x = 'Month',
+    y = 'Number of records'
+  )
+
+## Monthly statistics table
+df %>% 
+  mutate(month = month(date)) %>% 
+  group_by(month) %>% 
+  summarise(
+    count = n(),
+    n_unique_devices = length(unique(device)),
+    n_failures = sum(failure == 1)
+  ) %>% 
+  mutate(
+    failure_rate = n_failures / count,
+    p_unique_devices = n_unique_devices / count
+  ) %>% 
+  arrange(month)
+
+```
+
+
+### Attributes
+
+We will next explore attribute statistics and distributions. It seems that some variables are very concentrated around zero but have a few very large values. We will leave them in the dataset because Random Forest does not have too many problems handling this and also because outliers may contain positive instances.
+
+```{r, fig.width=8}
+
+## Basic statistics
+df %>% 
+  select(starts_with('attribute')) %>% 
+  map2_df(., names(.), function(x, name){
+    tibble(
+      variable = name,
+      min = min(x),
+      median = median(x),
+      mean = mean(x),
+      max = max(x)
+    )
+  })
+
+## Tables (omitted in final report)
+tabs <- df %>% 
+  select(starts_with('attribute')) %>% 
+  map(function(x){
+    tab <- table(x)
+    as.data.frame(tab[1:min(length(tab), 100)])
+  })
+
+## Variable distributions
+df %>% 
+  gather(attribute, value, starts_with('attribute')) %>% 
+  ggplot(aes(value, fill = failure)) +
+  geom_histogram() +
+  facet_wrap(~ attribute, scales = 'free_x') +
+  scale_x_continuous(labels = scales::comma) +
+  scale_y_continuous(labels = scales::comma) +
+  theme_bw() +
+  labs(
+    title = 'Attribute distributions',
+    x = 'Attribute value',
+    y = 'Count'
+  )
+
+```
+
+It can be seen that attributes 1, 3, 5, 6 and 9 do not say anything clear about the response. We will leave them in the mix because Random Forest will mostly ignore them and will choose the remaining attributes more often.
+
+```{r, fig.width=8}
+## Variable response distributions
+df %>% 
+  gather(attribute, value, starts_with('attribute')) %>% 
+  ggplot(aes(value, fill = failure)) +
+  geom_histogram(bins = 10, position = 'fill') +
+  facet_wrap(~ attribute, scales = 'free_x') +
+  scale_x_continuous(labels = scales::comma) +
+  scale_y_continuous(labels = scales::percent) +
+  theme_bw() +
+  labs(
+    title = 'Conditional response distributions',
+    x = 'Attribute value',
+    y = 'Count'
+  )
+```
+
+
+## Machine Learning
+
+### Variable transformations
+
+There is no need to transform the variables since we will use Random Forest, which is unaffected by any monotonic transformations.
+
+```{r}
+
+#eps <- 0.1
+ml <- df %>% 
+  mutate(
+    month = month(date)
+  )
+  # select(failure, starts_with('attribute'))
+  # mutate_at(vars(attribute2, attribute3, attribute4, attribute5, attribute7, attribute8, attribute9),
+  #           funs(log10(ifelse(. <= 0, eps, .))))
+
+```
+
+
+### Train / test split
+
+Tuning and error estimation should take the time factor into account. We will tune the hyperparameters on months 1-7, using 1-5 for training and 6-7 for validation. Then we will train on 1-7 and estimate the final testing error using months 8-11. We will then train the final model on all 11 months.
+
+```{r}
+training_months <- 7
+validation_months <- 2
+testing_months <- max(ml$month) - training_months
+tr <- ml %>% 
+  filter(month <= training_months)
+te <- ml %>% 
+  filter(month > training_months)
+
+## Months in training set
+sort(unique(tr$month))
+
+## Months in testing set
+sort(unique(te$month))
+
+```
+
+### Modelling
+
+#### Setup
+
+We will use the R package `mlr`, which offers a consistent interface for multiple ML R packages. Here we setup the task, learner and resampling strategy (train on 1-5, validate on 6-7).
+
+```{r}
+
+## Generate training task and final task (i.e. train + test for final model)
+gen_task <- function(data) {
+  data %>% 
+    select(failure, starts_with('attribute')) %>% 
+    as.data.frame() %>% 
+    makeClassifTask(
+      data = .,
+      target = 'failure',
+      positive = '1'
+    )
+}
+tsk <- gen_task(tr)
+final_tsk <- gen_task(ml)
+
+## Define learner
+lrn <- makeLearner(
+  cl = 'classif.randomForest',
+  predict.type = 'prob',
+  fix.factors.prediction = TRUE
+)
+
+## Resampling strategy
+tr_idx <- which(tr$month <= training_months - validation_months)
+val_idx <- setdiff(1:nrow(tr), tr_idx)
+rs <- makeFixedHoldoutInstance(
+  train.inds = tr_idx,
+  test.inds = val_idx,
+  size = nrow(tr)
+)
+rs$desc$predict <- 'both'
+
+```
+
+
+#### Hyperparameter tuning / grid search
+
+The next step is to optimize the hyperparameters to be used. We do this with a simple grid search.
+
+```{r}
+pars <- makeParamSet(
+  makeDiscreteParam('mtry', values = c(2,3,5)),
+  makeDiscreteParam('ntree', values = c(300, 500))
+)
+ctrl <- makeTuneControlGrid()
+
+set.seed(1234)
+tune <- tuneParams(
+  learner = lrn,
+  task = tsk,
+  resampling = rs,
+  measures = list(auc, mmce, tp, fn, tn, fp, featperc, timetrain, timepredict, timeboth),
+  par.set = pars,
+  control = ctrl,
+  show.info = TRUE
+)
+
+
+```
+
+We can see the effect of multiple hyperparameters in this plot and table.
+
+```{r}
+
+tune_df <- generateHyperParsEffectData(tune)
+
+ggplot(tune_df$data, aes(mtry, auc.test.mean, col = factor(ntree))) +
+  geom_line() +
+  geom_point() +
+  scale_color_discrete('Number of trees\nin the forest\n(ntree)') +
+  theme_bw() +
+  labs(
+    title = 'Hyperparameter tuning results',
+    x = 'Number of features randomly tested in each split (mtry)',
+    y = 'Validation AUC'
+  )
+
+tune_df$data %>% arrange(desc(auc.test.mean))
+
+```
+
+Once we have chosen the best hyperparameters, we construct the optimal learner.
+
+```{r}
+
+lrn_opt <- lrn %>%
+  setHyperPars(par.vals = tune$x)
+
+cat('Optimal hyperparameters:\n')
+tune$x %>% 
+  walk2(., names(.), function(val, name){
+    cat(sprintf('%s: %s\n', name, as.character(val)))
+  })
+
+```
+
+
+#### Test performance
+
+Before training the final model, we need to have a reliable estimation of the testing error of the model. To this end, we train on the full training set (months 1-7) and test on the test set (months 8-11).
+
+
+The results show that a sensitivity of about 40% can be achieved with a tradeoff of 5-10% false positives. Given the fact that failures are scarce (albeit expensive), it is important to have a very low false positive rate. Otherwise a large amount of trips will be flagged with no reason. In this case ~40% of failures can be successfully prevented (sensitivity), while flagging only 1 out of every 20 trips (5%).
+
+```{r}
+set.seed(1234)
+mod <- train(
+  learner = lrn_opt,
+  task = tsk
+)
+
+pred <- predict(
+  object = mod,
+  newdata = te %>% as.data.frame()
+)
+
+perf <- performance(pred, list(auc, mmce))
+
+roc_df <- generateThreshVsPerfData(
+  obj = pred,
+  measures = list(tpr, fpr),
+  gridsize = 200
+)
+
+ggplot(roc_df$data, aes(fpr, tpr, col = threshold)) +
+  geom_abline(slope = 1, intercept = 0, linetype = 'dashed') +
+  geom_line() +
+  geom_point() +
+  scale_color_viridis() +
+  coord_equal() +
+  theme_bw() +
+  labs(
+    title = 'Random Forest test performance',
+    subtitle = sprintf('AUC: %.0f%%', 100*perf[['auc']]),
+    x = '1 - Specificity (False Positive Rate)',
+    y = 'Sensitivity (True Positive Rate)'
+  )
+
+```
+
+**Bonus:** Given that we are using a Random Forest, we can also take a look at the variable importance.
+
+```{r}
+
+mod$learner.model$importance %>% 
+  as.data.frame() %>% 
+  rownames_to_column('attribute') %>% 
+  arrange(desc(MeanDecreaseGini))
+
+```
+
+
+#### Train final model
+
+We now train a final model using all the data. This is the model which we would actually put into the production environment.
+
+```{r}
+
+set.seed(1234)
+mod_final <- train(
+  learner = lrn_opt,
+  task = final_tsk
+)
+
+mod_final
+
+```
+
