@@ -12,7 +12,7 @@ library(keras)
 library(logging)
 system('set "KERAS_BACKEND=tensorflow"')
 basicConfig()
-setwd("~/studies/Learning/keras")
+# setwd("~/studies/Learning/keras")
 
 rotate_matrix <- function(x) {
   t(apply(x, 2, rev))
@@ -55,7 +55,7 @@ y_train <- mnist$train$y[1:N] %>% to_categorical()
 #   saveRDS(simpsons_data, 'data/simpsons_data.rds')
 #   rm(images, vectors, simpsons_data)
 # }
-x_train <- readRDS('data/simpsons_data.rds')
+x_train <- readRDS('keras/data/simpsons_data.rds')
 
 
 
