@@ -103,33 +103,22 @@ get_generator <- function(optimizer, input_shape) {
     layer_activation_leaky_relu(0.2) %>%
     layer_dense(1024) %>%
     layer_activation_leaky_relu(0.2) %>%
-    layer_dense(prod(dim(x_train)[-1]), activation = 'sigmoid') %>% 
+    layer_dense(prod(dim(x_train)[-1]), activation = 'tanh') %>% 
     layer_reshape(dim(x_train)[-1]) %>% 
-    layer_average_pooling_2d(pool_size = 3, strides = 1, padding = 'same') %>% 
     compile(loss = 'binary_crossentropy', optimizer = optimizer)
 }
 
 get_discriminator <- function(optimizer) {
   keras_model_sequential() %>% 
-    layer_conv_2d(32, 
-                  kernel_size = c(3, 3), 
-                  strides = 2, 
-                  padding = 'valid',
-                  input_shape = dim(x_train)[-1]) %>% 
+    layer_flatten(input_shape = dim(x_train)[-1]) %>% 
+    layer_dense(1024,
+                kernel_initializer =initializer_random_normal(stddev = 0.02)) %>% 
     layer_activation_leaky_relu(0.2) %>% 
     layer_dropout(0.3) %>% 
-    layer_conv_2d(16, 
-                  kernel_size = c(3, 3), 
-                  strides = 2, 
-                  padding = 'valid',
-                  input_shape = dim(x_train)[-1]) %>% 
+    layer_dense(512) %>% 
     layer_activation_leaky_relu(0.2) %>% 
     layer_dropout(0.3) %>% 
-    layer_flatten() %>%
     layer_dense(256) %>% 
-    layer_activation_leaky_relu(0.2) %>% 
-    layer_dropout(0.3) %>% 
-    layer_dense(128) %>% 
     layer_activation_leaky_relu(0.2) %>% 
     layer_dropout(0.3) %>% 
     layer_dense(1, activation = 'sigmoid') %>% 
@@ -147,7 +136,7 @@ get_gan_network <- function(discriminator, random_shape, generator, optimizer) {
 
 plot_generated_images <- function(epoch, generator, random_shape, examples = 15) {
   noise <- matrix(rnorm(examples * random_shape), nrow = examples, ncol = random_shape)
-  generated_images <- predict(generator, noise)
+  generated_images <- (1 - predict(generator, noise))/2
   col <- gray.colors(1000, 0, 1)
   layout(matrix(1:examples, nrow = floor(sqrt(examples))))
   for (i in seq_len(nrow(generated_images))) {
@@ -218,7 +207,7 @@ out <- train_gan(
   epochs = 10,
   batch_size = 128,
   random_shape = random_shape,
-  verbose_iter = 3,
+  verbose_iter = 1,
   examples = 15
 )
 
