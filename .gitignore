@@ -8,3 +8,10 @@ aws
 .Rproj.user
 *.csv
 *.png
+*.jpg
+*.jpeg
+*.rds
+*.RData
+*.zip
+*.tar.gz
+*.pdf
