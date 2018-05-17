@@ -147,12 +147,11 @@ get_gan_network <- function(discriminator, random_shape, generator, optimizer) {
 
 plot_generated_images <- function(epoch, generator, random_shape, examples = 15) {
   noise <- matrix(rnorm(examples * random_shape), nrow = examples, ncol = random_shape)
-  generated_images <- predict(generator, noise) %>% array_reshape(., c(dim(.)[1], sqrt(ncol(.)), sqrt(ncol(.))))
-  generated_images <- (1 - generated_images) / 2
+  generated_images <- predict(generator, noise)
   col <- gray.colors(1000, 0, 1)
   layout(matrix(1:examples, nrow = floor(sqrt(examples))))
   for (i in seq_len(nrow(generated_images))) {
-    image(rotate_matrix(generated_images[i, , ]), axes = FALSE, col = col, asp = 1)
+    image(generated_images[i, , , ], axes = FALSE, col = col, asp = 1)
   }
 }
 
@@ -190,7 +189,7 @@ train_gan <- function(generator, discriminator, gan, epochs = 1, batch_size = 12
        plt <- safely(plot_generated_images)(e, generator, random_shape, examples = examples)
        if (!is.null(plt$error)) {
          logwarn('Something went wrong with the plots. Resetting device...')
-         dev.off()
+         safely(dev.off)()
        }
     }
   }
@@ -224,7 +223,7 @@ out <- train_gan(
 )
 
 
-# plot_generated_images(1, out$generator, 200, 15)
+plot_generated_images(1, out$generator, 100, 15)
 
 
 ## Train some more
