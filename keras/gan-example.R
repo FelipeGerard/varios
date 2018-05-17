@@ -28,35 +28,61 @@ image(rotate_matrix(mnist$train$x[3,,]))
 
 N <- 60000
 x_train <- mnist$train$x[1:N, , ] %>%
-  array_reshape(c(N, prod(dim(mnist$train$x)[-1]))) %>% 
+  array_reshape(c(N, dim(mnist$train$x)[-1], 1))%>% 
   divide_by(255)
 y_train <- mnist$train$y[1:N] %>% to_categorical()
 
 ## Simpsons data
 ## https://www.kaggle.com/alexattia/the-simpsons-characters-dataset
-# data_folder <- 'the-simpsons-characters-dataset/simpsons_dataset/simpsons_dataset/'
-# images <- list.files(data_folder, full.names = TRUE, recursive = TRUE) %>% 
-#   str_subset('jpg$') %>% 
-#   # head(10) %>% 
-#   map(function(x){
-#     print(x)
-#     readImage(x) %>%
-#       EBImage::channel('gray') %>% 
-#       EBImage::flip() %>% 
-#       # array_reshape(., c(dim(.)[1:3])) %>%
-#       EBImage::resize(w = 100, h = 100)
-#   })
-# # simpsons_data <- reduce(images, abind::abind, along = 3)
-# vectors <- images %>% 
-#   map(as.numeric)
-# simpsons_data <- do.call(rbind, vectors)
-# 
-# if (FALSE) {
-#   saveRDS(simpsons_data, 'data/simpsons_data.rds')
-#   rm(images, vectors, simpsons_data)
-# }
-x_train <- readRDS('keras/data/simpsons_data.rds')
+if (FALSE) {
+  data_folder <- 'keras/the-simpsons-characters-dataset/simpsons_dataset/simpsons_dataset/'
+  resolution <- 100
+  images <- list.files(data_folder, full.names = TRUE, recursive = TRUE) %>%
+    str_subset('jpg$') %>%
+    # head(10) %>%
+    map(function(x){
+      print(x)
+      readImage(x) %>%
+        EBImage::channel('gray') %>%
+        EBImage::flip() %>%
+        # array_reshape(., c(dim(.)[1:3])) %>%
+        EBImage::resize(w = resolution, h = resolution)
+    })
+  saveRDS(images, 'keras/data/simpsons-image-list.rds')
+}
 
+if (FALSE) {
+  images_raw <- readRDS('keras/data/simpsons-image-list.rds')
+  images <- images_raw %>% 
+    map2(., seq_along(.), function(x, i){
+      if (i %% 100 == 0) {
+        print(i)
+      }
+      x <- EBImage::resize(x, w = 70, h = 70)
+      array_reshape(x, c(1, dim(x), 1))
+    })
+  # image(images[[1]])
+  # image(images[[2]])
+  
+  ## Note we have to use abind::abind, not EBImage::abind or it doesn't work
+  simpsons_data <- images %>%
+    abind::abind(along = 1)
+  # simpsons_data1 <- images[1:round(length(images)/2)] %>% 
+  #   map(function(x){
+  #     array_reshape(x, c(1, dim(x), 1))
+  #   }) %>% 
+  #   abind::abind(along = 1)
+  # simpsons_data2 <- images[(round(length(images)/2) + 1):length(images)] %>% 
+  #   map(function(x){
+  #     array_reshape(x, c(1, dim(x), 1))
+  #   }) %>% 
+  #   abind::abind(along = 1)
+  # simpsons_data <- abind::abind(simpsons_data1, simpsons_data2, along = 1)
+  saveRDS(simpsons_data, 'keras/data/simpsons_data_array_70x70.rds')
+  x_train <- simpsons_data
+  rm(images, simpsons_data)
+}
+x_train <- readRDS('keras/data/simpsons_data_array_70x70.rds')
 
 
 
@@ -68,30 +94,42 @@ get_optimizer <- function() {
 }
 
 get_generator <- function(optimizer, input_shape) {
-  keras_model_sequential() %>% 
+  keras_model_sequential() %>%
     layer_dense(256,
                 input_shape = input_shape,
                 kernel_initializer =initializer_random_normal(stddev = 0.02)) %>% 
     layer_activation_leaky_relu(0.2) %>% 
     layer_dense(512) %>% 
-    layer_activation_leaky_relu(0.2) %>% 
-    layer_dense(256) %>% 
-    layer_activation_leaky_relu(0.2) %>% 
-    layer_dense(dim(x_train)[2], activation = 'tanh') %>% 
+    layer_activation_leaky_relu(0.2) %>%
+    layer_dense(1024) %>%
+    layer_activation_leaky_relu(0.2) %>%
+    layer_dense(prod(dim(x_train)[-1]), activation = 'sigmoid') %>% 
+    layer_reshape(dim(x_train)[-1]) %>% 
+    layer_average_pooling_2d(pool_size = 3, strides = 1, padding = 'same') %>% 
     compile(loss = 'binary_crossentropy', optimizer = optimizer)
 }
 
 get_discriminator <- function(optimizer) {
   keras_model_sequential() %>% 
-    layer_dense(1024,
-                input_shape = dim(x_train)[2],
-                kernel_initializer =initializer_random_normal(stddev = 0.02)) %>% 
+    layer_conv_2d(32, 
+                  kernel_size = c(3, 3), 
+                  strides = 2, 
+                  padding = 'valid',
+                  input_shape = dim(x_train)[-1]) %>% 
     layer_activation_leaky_relu(0.2) %>% 
     layer_dropout(0.3) %>% 
-    layer_dense(512) %>% 
+    layer_conv_2d(16, 
+                  kernel_size = c(3, 3), 
+                  strides = 2, 
+                  padding = 'valid',
+                  input_shape = dim(x_train)[-1]) %>% 
     layer_activation_leaky_relu(0.2) %>% 
     layer_dropout(0.3) %>% 
+    layer_flatten() %>%
     layer_dense(256) %>% 
+    layer_activation_leaky_relu(0.2) %>% 
+    layer_dropout(0.3) %>% 
+    layer_dense(128) %>% 
     layer_activation_leaky_relu(0.2) %>% 
     layer_dropout(0.3) %>% 
     layer_dense(1, activation = 'sigmoid') %>% 
@@ -126,11 +164,11 @@ train_gan <- function(generator, discriminator, gan, epochs = 1, batch_size = 12
     for (k in 1:batch_count){
       # Get a random set of input noise and images
       noise <- matrix(rnorm(batch_size * random_shape), nrow = batch_size, ncol = random_shape)
-      image_batch <- x_train[sample(seq_len(nrow(x_train)), size = batch_size), ]
+      image_batch <- x_train[sample(seq_len(nrow(x_train)), size = batch_size), , , , drop = FALSE]
       
       # Generate fake images
       generated_images <- predict(generator, noise)
-      X <- rbind(image_batch, generated_images)
+      X <- abind::abind(image_batch, generated_images, along = 1)
       
       # Labels for generated and real data
       y_dis <- rep(0, 2 * batch_size)
@@ -163,18 +201,24 @@ train_gan <- function(generator, discriminator, gan, epochs = 1, batch_size = 12
 
 # Train network -----------------------------------------------------------
 
+random_shape <- 100
 adam <- get_optimizer()
-generator <- get_generator(adam, random_shape)
+generator <- get_generator(adam, input_shape = random_shape)
 discriminator <- get_discriminator(adam)
-gan <- get_gan_network(discriminator, random_shape, generator, adam)
+gan <- get_gan_network(
+  discriminator = discriminator, 
+  random_shape = random_shape, 
+  generator = generator, 
+  optimizer = adam
+)
 
 out <- train_gan(
   generator = generator,
   discriminator = discriminator,
   gan = gan,
-  epochs = 100,
+  epochs = 10,
   batch_size = 128,
-  random_shape = 200,
+  random_shape = random_shape,
   verbose_iter = 3,
   examples = 15
 )
