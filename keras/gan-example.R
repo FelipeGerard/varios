@@ -222,8 +222,8 @@ out <- train_gan(
   gan = out$gan,
   epochs = 100,
   batch_size = 128,
-  random_shape = 200,
-  verbose_iter = 3,
+  random_shape = random_shape,
+  verbose_iter = 1,
   examples = 15
 )
 
