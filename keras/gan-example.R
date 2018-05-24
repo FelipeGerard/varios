@@ -103,6 +103,8 @@ get_generator <- function(optimizer, input_shape) {
     layer_activation_leaky_relu(0.2) %>%
     layer_dense(1024) %>%
     layer_activation_leaky_relu(0.2) %>%
+    layer_dense(2048) %>%
+    layer_activation_leaky_relu(0.2) %>%
     layer_dense(prod(dim(x_train)[-1]), activation = 'tanh') %>% 
     layer_reshape(dim(x_train)[-1]) %>% 
     compile(loss = 'binary_crossentropy', optimizer = optimizer)
@@ -111,8 +113,10 @@ get_generator <- function(optimizer, input_shape) {
 get_discriminator <- function(optimizer) {
   keras_model_sequential() %>% 
     layer_flatten(input_shape = dim(x_train)[-1]) %>% 
-    layer_dense(1024,
+    layer_dense(2048,
                 kernel_initializer =initializer_random_normal(stddev = 0.02)) %>% 
+    layer_activation_leaky_relu(0.2) %>% 
+    layer_dense(1024) %>% 
     layer_activation_leaky_relu(0.2) %>% 
     layer_dropout(0.3) %>% 
     layer_dense(512) %>% 
@@ -189,7 +193,7 @@ train_gan <- function(generator, discriminator, gan, epochs = 1, batch_size = 12
 
 # Train network -----------------------------------------------------------
 
-random_shape <- 100
+random_shape <- 200
 adam <- get_optimizer()
 generator <- get_generator(adam, input_shape = random_shape)
 discriminator <- get_discriminator(adam)
